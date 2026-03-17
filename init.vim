@@ -11,14 +11,25 @@ set showcmd
 set nocompatible
 filetype off
 
+filetype plugin on          " keep plugin for syntax/ft detection
+filetype indent off         " ← disable indent scripts that override tabs
+
 
 let mapleader = ","
 
 set nu
 set ruler
+
+" Tab stuff, sometime you need to create and throw the below into a after file as nvim overides these
+" file location: ~/.config/nvim/after/plugin/override-indent.vim
 set tabstop=4
 set softtabstop=4
 set shiftwidth=4
+set expandtab
+
+
+set smarttab            " <Tab> in front of line uses shiftwidth, not tabstop/softtabstop
+set autoindent          " (or smartindent / cindent depending on file type)
 
 " Highlight trailing whitespace
 highlight ExtraWhitespace ctermbg=red guibg=red
