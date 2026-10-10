@@ -1,24 +1,33 @@
 #!/bin/bash
+# Install zsh. macOS uses Homebrew. Debian and Ubuntu use apt-get.
+set -euo pipefail
 
-#if [[ $EUID -ne 0 ]]; then
-#   echo "This script must be run as root"
-#   exit 1
-#fi
-
-# Added `microsoft` due to `uname -v` returning `#836-Microsoft Mon May 05 16:04:00 PST 2020` on a WSL version.
-version=$(uname -v)
-debbased=$(echo $version | grep -Pio "(debian|ubuntu|microsoft)")
-if [[ "$debbased" = "Debian" ]] || [[ "$debbased" = "Microsoft" ]] || [[ "$debbased" = "Ubuntu" ]]
-then
-	#echo Running on a Debian Based Distro.
-	#apt update
-	#apt install zsh -y
-	echo "Run the Following:"
-	echo "apt update"
-	echo "apt install zsh -y"
-	exit 1
-exit 0
+if [ "$(id -u)" -eq 0 ]; then
+  as_root() { "$@"; }
 else
-	#echo Using Pacman.
-	pacman -S zsh
+  as_root() { sudo "$@"; }
+fi
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  command -v brew >/dev/null 2>&1 || {
+    echo "Homebrew is required. See https://brew.sh" >&2
+    exit 1
+  }
+  brew install zsh
+elif [ -r /etc/os-release ]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case "${ID:-}:${ID_LIKE:-}" in
+    *debian*|*ubuntu*)
+      as_root apt-get update
+      as_root apt-get install -y zsh
+      ;;
+    *)
+      echo "Install zsh with your package manager, then re-run." >&2
+      exit 1
+      ;;
+  esac
+else
+  echo "Install zsh with your package manager, then re-run." >&2
+  exit 1
 fi

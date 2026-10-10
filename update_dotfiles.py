@@ -4,6 +4,7 @@ import os
 import configparser
 import argparse
 import re
+import time
 
 global verbose
 
@@ -31,10 +32,13 @@ def get_file_offsets(path, specified_file_names=None):
         root_offset = root.replace(path, "")
         if len(root_offset) > 0 and root_offset[0] == "/":
             root_offset = root_offset[1:]
-        if specified_file_names is not None:
-            paths_to_return = [os.path.join(root_offset, i) for i in files if i in specified_file_names]
-        else:
-            paths_to_return = [os.path.join(root_offset, i) for i in files]
+        wanted = set(specified_file_names) if specified_file_names is not None else None
+        paths_to_return = []
+        for name in files:
+            rel = os.path.join(root_offset, name) if root_offset else name
+            if wanted is not None and rel not in wanted:
+                continue
+            paths_to_return.append(rel)
         file_paths.extend(paths_to_return)
     return file_paths
 
@@ -47,9 +51,18 @@ def install_dotfiles(specified_files=None):
                        r'\.gitignore', r"update_dotfiles\.py",
                        r'dotfilesInstallScripts',
                        r'README.md', r"ohmyzsh_offline",
-                       r"vim_offline"]
+                       r"vim_offline", r'(^|/)scripts/',
+                       r'(^|/)\.github/', r'(^|/)build/',
+                       r'^setup\.sh$']
     for pat in ignore_patterns:
         offsets = [s for s, i in [(m, re.search(pat, m)) for m in offsets] if i is None]
+
+    if specified_files is not None:
+        found = set(offsets)
+        missing = [name for name in specified_files if name not in found]
+        if missing:
+            print("not in this repo: " + ", ".join(missing))
+            exit(1)
 
     for offset in offsets:
         verbose_print(f"home: {home}")
@@ -61,6 +74,10 @@ def install_dotfiles(specified_files=None):
         if not os.path.exists(dest_dir):
             verbose_print(f"Making makedirs: {dest_dir}")
             os.makedirs(dest_dir, exist_ok=True)
+        if os.path.lexists(dest):
+            backup = dest + ".backup." + time.strftime("%Y%m%d%H%M%S")
+            os.replace(dest, backup)
+            verbose_print(f"backup: {backup}")
         shutil.copy(os.path.join(dotfiles_repo_dir, offset), dest)
         verbose_print("source: " + os.path.join(dotfiles_repo_dir, offset))
 
@@ -129,7 +146,7 @@ for repo in repo_locations:
 
     for file in files_to_update:
         file_path = os.path.join(os.path.expanduser("~"), file)
-        if not file_path:
+        if not os.path.exists(file_path):
             print(f"file {file_path} does not exist and will not be copied to the repo")
             continue
 

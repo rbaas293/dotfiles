@@ -1,113 +1,226 @@
-#!/bin/bash
-# Usage: ./setup.sh [--offline] [-v|--verbose]
+#!/usr/bin/env bash
+# Install zsh, tmux, and vim configs on macOS or Debian/Ubuntu.
 #
-# Description: Setup dotfiles with defaults, this will install vim,zsh, dependencies, and oh-my-zsh.
-#				and install the default plugins.
+#   ./setup.sh [--yes] [--no-chsh] [--source DIR]
+#   ./setup.sh --pack                 # online install, then build/dotfiles-offline.tar.gz
+#   ./setup.sh --zipapp               # online install, then build/dotfiles.pyz
+#   ./setup.sh --offline --source DIR # air-gapped install from an extracted archive
+#   ./setup.sh --with-tmuxai --token TOKEN
+#
+# --source skips the SSH clone and uses that checkout. CI passes the
+# GitHub workspace. On a machine of yours, clone with:
+#   git clone git@github.com:rbaas293/dotfiles.git ~/.dotfiles
+#
+# --offline never calls curl, git, brew, or apt. zsh, tmux, and vim must
+# already be installed. .zprofile is not installed.
 
-# Defaults
-OFFLINE=no
-VERBOSE=no
+set -euo pipefail
 
-if [ ! -x libsh/std.sh ];then
-	echo "setup.sh: Error: libsh/std.sh Does Not Exist or is Not Executable."
-	echo "setup.sh: Try running 'git submodule init && git submodule update'."
-	exit 1
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=scripts/common.sh
+source "$SCRIPT_DIR/scripts/common.sh"
+
+REPO_URL="git@github.com:rbaas293/dotfiles.git"
+DO_PACK=0
+DO_ZIPAPP=0
+WITH_TMUXAI=0
+TMUXAI_ARGS=()
+
+usage() {
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --yes|-y) DOTFILES_ASSUME_YES=1 ;;
+    --no-chsh) DOTFILES_NO_CHSH=1 ;;
+    --dry-run) DOTFILES_DRY_RUN=1 ;;
+    --offline) DOTFILES_OFFLINE=1 ;;
+    --pack) DO_PACK=1 ;;
+    --zipapp) DO_ZIPAPP=1 ;;
+    --with-tmuxai) WITH_TMUXAI=1 ;;
+    --source)
+      [ "$#" -ge 2 ] || die "--source needs a directory"
+      DOTFILES_SOURCE=$2
+      shift
+      ;;
+    --token|--provider|--model|--base-url)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      TMUXAI_ARGS+=("$1" "$2")
+      shift
+      ;;
+    --anthropic)
+      TMUXAI_ARGS+=("$1")
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "Unknown option: $1" ;;
+  esac
+  shift
+done
+
+if [ "$DOTFILES_OFFLINE" -eq 1 ] && { [ "$DO_PACK" -eq 1 ] || [ "$DO_ZIPAPP" -eq 1 ]; }; then
+  die "--pack and --zipapp need a network. Run them on an online machine."
+fi
+if [ "$WITH_TMUXAI" -eq 1 ] && [ "$DOTFILES_OFFLINE" -eq 1 ]; then
+  die "TmuxAI is not part of the offline archive."
 fi
 
-source libsh/std.sh
-make_sh_macos_compatible
+export DOTFILES_SOURCE DOTFILES_OFFLINE DOTFILES_DRY_RUN DOTFILES_ASSUME_YES \
+  DOTFILES_NO_CHSH DOTFILES_SKIP_PACKAGES DOTFILES_PERSIST
 
-#Variables
-PWD=$(pwd)
-SELF=$(realpath $0)
-SELF_PARENT=$(realpath $(dirname $0))
-SCRIPTS=$(realpath $SELF_PARENT/dotfilesInstallScripts)
-VIM_OFFLINE=$(realpath $SELF_PARENT/vim_offline)
-ZSH_OFFLINE=$(realpath $SELF_PARENT/ohmyzsh_offline)
-
-main() {
-	param switch offline $@
-	param switch OFFLINE $@
-	param switch verbose $@
-	param switch v $@
-	param switch debug $@
-	param switch d $@
-
-	if expr "$offline" : 'yes' > /dev/null; then
-		OFFLINE=yes
-	fi
-
-	#need_root
-	setup_color override
-
-	verbose "Checking for existence of $SCRIPTS"
-	check_file $SCRIPTS
-
-	verbose "Making Scripts Executable"
-	for i in $(ls $SCRIPTS); do
-		chmod +x $SCRIPTS/$i
-	done
-
-	# Run Dependencies
-	#write ${BLUE}"Installing Dependencies"${RESET}
-	#bash $SCRIPTS/vim_deps.sh
-	#bash $SCRIPTS/zsh_deps.sh
-
-	if expr "$OFFLINE" : 'yes' > /dev/null && check_file $VIM_OFFLINE/bundle c &>/dev/null ; then
-
-		verbose "Copying Offline vim Plugins to ~/.vim/bundle"
-		mkdir -p ~/.vim
-		if [ ! -d ~/.vim/bundle ]; then
-			cp -r $VIM_OFFLINE/bundle ~/.vim
-		fi
-
-		if [ -d ~/.vim/bundle ]; then
-			verbose $GREEN"Sucess."$RESET
-		fi
-	fi
-
-	# Run ohmyzsh setup depending on offline switch.
-	bash $SCRIPTS/zshsetup.sh $@
-
-	#Install Dotfiles
-	write ${BLUE}"Running update_dotfiles.py"${RESET}
-	check_file $SELF_PARENT/update_dotfiles.py
-	for dot in .zshrc .vimrc .tmux.conf; do
-		python3 $SELF_PARENT/update_dotfiles.py --install -f $dot
-	done
-	cd $SELF_PARENT
-
-	write ${BLUE}"Opening vim."${RESET}
-	vim
-
-	# make python interactive tab complete work
-	echo 'export PYTHONSTARTUP="~/.pythonstartup.py"' >> ~/.bashrc
-
-	if expr "$OFFLINE" : 'yes' > /dev/null; then
-		verbose "Storing Offline vim Plugins to $VIM_OFFLINE/bundle"
-		mkdir -p $VIM_OFFLINE
-		check_file  ~/.vim/bundle && [ ! -e $VIM_OFFLINE/bundle ] && cp -r ~/.vim/bundle $VIM_OFFLINE/bundle
-	fi
-
-	write ${BLUE}"Setting zsh as the default shell."${RESET}
-	write ${BLUE}"Run: sudo chsh -s /usr/bin/zsh"${RESET}
-	#sudo chsh -s /usr/bin/zsh
-
-	if expr "$OFFLINE" : 'yes' > /dev/null; then
-		write ${BLUE}"Exporing archives to ${PWD}/build"${RESET}
-		build_zip
-	fi
-
-	write ${BLUE}${BOLD}"DONE."${RESET}
+resolve_source() {
+  if [ -n "$DOTFILES_SOURCE" ]; then
+    [ -d "$DOTFILES_SOURCE" ] || die "No such directory: $DOTFILES_SOURCE"
+    DOTFILES_SOURCE=$(abspath "$DOTFILES_SOURCE")
+  elif [ -f "$SCRIPT_DIR/.zshrc" ]; then
+    DOTFILES_SOURCE=$SCRIPT_DIR
+  elif [ -f "$HOME/.dotfiles/.zshrc" ]; then
+    DOTFILES_SOURCE="$HOME/.dotfiles"
+    if [ "$DOTFILES_OFFLINE" -eq 0 ] && [ "$DOTFILES_DRY_RUN" -eq 0 ] && [ -d "$DOTFILES_SOURCE/.git" ]; then
+      info "Updating $DOTFILES_SOURCE"
+      git -C "$DOTFILES_SOURCE" pull --ff-only
+    fi
+  elif [ "$DOTFILES_OFFLINE" -eq 1 ]; then
+    die "Offline mode needs --source pointing at the extracted archive."
+  elif [ "$DOTFILES_DRY_RUN" -eq 1 ]; then
+    info "would clone $REPO_URL to $HOME/.dotfiles"
+    return 0
+  else
+    info "Cloning $REPO_URL to $HOME/.dotfiles"
+    git clone --depth=1 "$REPO_URL" "$HOME/.dotfiles"
+    DOTFILES_SOURCE="$HOME/.dotfiles"
+  fi
+  export DOTFILES_SOURCE
+  [ -f "$DOTFILES_SOURCE/.zshrc" ] || die "$DOTFILES_SOURCE has no .zshrc"
+  [ -f "$DOTFILES_SOURCE/.zshenv" ] || die "$DOTFILES_SOURCE has no .zshenv"
+  [ -f "$DOTFILES_SOURCE/.tmux.conf" ] || die "$DOTFILES_SOURCE has no .tmux.conf"
+  [ -f "$DOTFILES_SOURCE/.vimrc" ] || die "$DOTFILES_SOURCE has no .vimrc"
 }
 
-build_zip(){
-	mkdir -p build
-	pushd .. > /dev/null
-	zip -q -r dotfiles/build/$(date +"%m%d%y")_dotfiles.zip dotfiles -x "\dotfiles/.git/*" "\dotfiles/build/*"
-	popd > /dev/null
-	tar --exclude="dotfiles/.git" --exclude="dotfiles/build" -czf build/$(date +"%m%d%y")_dotfiles.tar.gz ../dotfiles > /dev/null
+install_vim() {
+  link_file "$(config_link_source .vimrc)" "$HOME/.vimrc"
+  if [ "$DOTFILES_OFFLINE" -eq 1 ]; then
+    [ -d "$DOTFILES_SOURCE/cache/vim-bundle" ] || die "cache/vim-bundle is missing. Re-run ./setup.sh --pack on an online machine."
+    info "Installing Vim plugins from the offline cache"
+    mkdir -p "$HOME/.vim"
+    copy_tree "$DOTFILES_SOURCE/cache/vim-bundle" "$HOME/.vim/bundle"
+    return 0
+  fi
+  if [ "$DOTFILES_DRY_RUN" -eq 1 ] || [ "$DOTFILES_SKIP_PACKAGES" -eq 1 ]; then
+    info "Skipping Vim PluginInstall"
+    return 0
+  fi
+  info "Installing Vim plugins"
+  mkdir -p "$HOME/.vim/bundle"
+  # nomore stops the "Press ENTER" prompt when a plugin is not installed yet.
+  # --not-a-term keeps CI from waiting on a TTY. Older vim lacks that flag.
+  if vim --help 2>&1 | grep -q -- '--not-a-term'; then
+    vim --not-a-term --cmd 'set nomore' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!' </dev/null
+  else
+    vim --cmd 'set nomore' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!' </dev/null
+  fi
+  ok "Vim plugins installed"
 }
 
+stage_payload() {
+  local stage=$1
+  if [ "$DOTFILES_DRY_RUN" -eq 1 ]; then
+    info "would stage $stage"
+    return 0
+  fi
+  [ -d "$HOME/.oh-my-zsh" ] || die "Oh My Zsh is not installed yet. Run ./setup.sh without --offline first."
+  [ -d "$HOME/.vim/bundle" ] || die "Vim plugins are not installed yet. Run ./setup.sh without --offline first."
+  rm -rf "$stage"
+  mkdir -p "$stage/scripts" "$stage/cache"
+  cp -a "$SCRIPT_DIR/setup.sh" "$stage/setup.sh"
+  cp -a "$SCRIPT_DIR/scripts/." "$stage/scripts/"
+  local name
+  for name in .zshrc .zshenv .tmux.conf .vimrc; do
+    cp -a "$DOTFILES_SOURCE/$name" "$stage/$name"
+  done
+  copy_tree "$HOME/.oh-my-zsh" "$stage/cache/oh-my-zsh"
+  copy_tree "$HOME/.vim/bundle" "$stage/cache/vim-bundle"
+  chmod 755 "$stage/setup.sh"
+  chmod 755 "$stage/scripts/"*.sh
+}
 
-main "$@"
+write_checksum() {
+  local file=$1
+  local base
+  base=$(basename "$file")
+  if have sha256sum; then
+    (cd "$(dirname "$file")" && sha256sum "$base" > "$base.sha256")
+  else
+    (cd "$(dirname "$file")" && shasum -a 256 "$base" > "$base.sha256")
+  fi
+}
+
+pack_archive() {
+  local build="$SCRIPT_DIR/build"
+  local stage="$build/dotfiles-offline"
+  local archive="$build/dotfiles-offline.tar.gz"
+  info "Packing offline archive"
+  if [ "$DOTFILES_DRY_RUN" -eq 1 ]; then
+    info "would write $archive"
+    return 0
+  fi
+  mkdir -p "$build"
+  stage_payload "$stage"
+  tar -C "$build" -czf "$archive" dotfiles-offline
+  write_checksum "$archive"
+  ok "Wrote $archive"
+}
+
+build_zipapp() {
+  local build="$SCRIPT_DIR/build"
+  local stage="$build/zipapp-src"
+  local app="$build/dotfiles.pyz"
+  info "Building zipapp"
+  if [ "$DOTFILES_DRY_RUN" -eq 1 ]; then
+    info "would write $app"
+    return 0
+  fi
+  have python3 || die "python3 is required to build the zipapp."
+  mkdir -p "$build"
+  stage_payload "$stage"
+  cp -a "$SCRIPT_DIR/scripts/zipapp_main.py" "$stage/__main__.py"
+  rm -f "$app"
+  python3 -m zipapp "$stage" -p "/usr/bin/env python3" -o "$app"
+  chmod 755 "$app"
+  ok "Wrote $app"
+}
+
+resolve_source
+
+if [ "$DOTFILES_OFFLINE" -eq 1 ]; then
+  require_offline_tools
+else
+  ensure_packages
+fi
+
+bash "$SCRIPT_DIR/scripts/setup-zsh.sh"
+bash "$SCRIPT_DIR/scripts/setup-tmuxai.sh" --tmux-only
+install_vim
+
+if [ -e "$HOME/.zprofile" ]; then
+  ok "Left existing .zprofile unchanged"
+else
+  ok ".zprofile was not installed"
+fi
+
+if [ "$WITH_TMUXAI" -eq 1 ]; then
+  if [ "${#TMUXAI_ARGS[@]}" -eq 0 ]; then
+    bash "$SCRIPT_DIR/scripts/setup-tmuxai.sh"
+  else
+    bash "$SCRIPT_DIR/scripts/setup-tmuxai.sh" "${TMUXAI_ARGS[@]}"
+  fi
+fi
+
+if [ "$DO_PACK" -eq 1 ]; then
+  pack_archive
+fi
+if [ "$DO_ZIPAPP" -eq 1 ]; then
+  build_zipapp
+fi
+
+info "Done. Open a new terminal, or run: exec zsh"
