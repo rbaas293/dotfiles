@@ -96,6 +96,7 @@ jobs:
 
           run_setup --zipapp
           [ -x "$GITHUB_WORKSPACE/build/dotfiles.pyz" ]
+          [ -f "$GITHUB_WORKSPACE/build/dotfiles.pyz.sha256" ]
           zip_home="${RUNNER_TEMP}/zipapp-home"
           rm -rf "$zip_home"
           mkdir -p "$zip_home"

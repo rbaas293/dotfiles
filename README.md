@@ -17,8 +17,11 @@ cd ~/.dotfiles
 TmuxAI is optional and stays out of the offline archive:
 
 ```bash
-./setup.sh --with-tmuxai --token "$TMUXAI_API_TOKEN"
+TMUXAI_API_TOKEN=your-token ./setup.sh --with-tmuxai
+./setup.sh --with-tmuxai --token-file ~/.config/tmuxai-token
 ```
+
+The token is read from the environment or from a file. It is not accepted as a command argument.
 
 ## Air-gapped install
 
@@ -31,7 +34,7 @@ On a machine with network:
 That writes:
 
 - `build/dotfiles-offline.tar.gz` and `build/dotfiles-offline.tar.gz.sha256`
-- `build/dotfiles.pyz`, one executable file
+- `build/dotfiles.pyz` and `build/dotfiles.pyz.sha256`, one executable file
 
 The archive holds the installer, the four config files, Oh My Zsh, the zsh plugins, and the Vim bundles. It does not contain `.git`, `.zprofile`, or a TmuxAI token. `zsh`, `tmux`, and `vim` must already be on the air-gapped machine (from an internal mirror). The archive does not download them.
 
@@ -48,6 +51,8 @@ cd dotfiles-offline
 Or copy the zipapp and run it. The target also needs `python3`. This is a Python zipapp, not a native binary.
 
 ```bash
+sha256sum -c dotfiles.pyz.sha256          # Linux
+shasum -a 256 -c dotfiles.pyz.sha256      # macOS
 chmod +x dotfiles.pyz
 ./dotfiles.pyz --no-chsh
 ```

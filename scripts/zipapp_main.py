@@ -23,6 +23,23 @@ def archive_path():
     raise SystemExit("dotfiles.pyz: could not open the zipapp archive")
 
 
+def safe_extract(bundle, dest):
+    """Extract bundle into dest, refusing paths that leave that directory."""
+    root = dest.resolve()
+    for info in bundle.infolist():
+        name = info.filename.replace("\\", "/")
+        if name.startswith("/") or "\x00" in name or ".." in Path(name).parts:
+            raise SystemExit(f"dotfiles.pyz: refused unsafe path {info.filename!r}")
+        target = (root / name).resolve()
+        if target != root and root not in target.parents:
+            raise SystemExit(f"dotfiles.pyz: refused unsafe path {info.filename!r}")
+        mode = info.external_attr >> 16
+        if stat.S_ISLNK(mode):
+            raise SystemExit(f"dotfiles.pyz: refused symlink {info.filename!r}")
+    for info in bundle.infolist():
+        bundle.extract(info, root)
+
+
 def forward_args(argv):
     cleaned = []
     index = 0
@@ -44,7 +61,7 @@ def main():
     dest = Path(tempfile.mkdtemp(prefix="dotfiles-"))
     try:
         with zipfile.ZipFile(archive) as bundle:
-            bundle.extractall(dest)
+            safe_extract(bundle, dest)
         setup = dest / "setup.sh"
         if not setup.is_file():
             raise SystemExit("dotfiles.pyz: archive has no setup.sh")

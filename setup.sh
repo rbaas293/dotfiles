@@ -5,7 +5,8 @@
 #   ./setup.sh --pack                 # online install, then build/dotfiles-offline.tar.gz
 #   ./setup.sh --zipapp               # online install, then build/dotfiles.pyz
 #   ./setup.sh --offline --source DIR # air-gapped install from an extracted archive
-#   ./setup.sh --with-tmuxai --token TOKEN
+#   TMUXAI_API_TOKEN=TOKEN ./setup.sh --with-tmuxai
+#   ./setup.sh --with-tmuxai --token-file /path/to/token
 #
 # --source skips the SSH clone and uses that checkout. CI passes the
 # GitHub workspace. On a machine of yours, clone with:
@@ -27,7 +28,7 @@ WITH_TMUXAI=0
 TMUXAI_ARGS=()
 
 usage() {
-  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ "$#" -gt 0 ]; do
@@ -44,7 +45,10 @@ while [ "$#" -gt 0 ]; do
       DOTFILES_SOURCE=$2
       shift
       ;;
-    --token|--provider|--model|--base-url)
+    --token)
+      die "Do not pass the API token on the command line. Set TMUXAI_API_TOKEN or use --token-file."
+      ;;
+    --token-file|--provider|--model|--base-url)
       [ "$#" -ge 2 ] || die "$1 needs a value"
       TMUXAI_ARGS+=("$1" "$2")
       shift
@@ -187,6 +191,7 @@ build_zipapp() {
   rm -f "$app"
   python3 -m zipapp "$stage" -p "/usr/bin/env python3" -o "$app"
   chmod 755 "$app"
+  write_checksum "$app"
   ok "Wrote $app"
 }
 
