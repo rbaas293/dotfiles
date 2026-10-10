@@ -98,13 +98,16 @@ set tags=tags; " Find tags recursively
 " Make completion menu behave like an IDE
 set completeopt=longest,menuone,preview
 
-colorscheme onedark
+if !empty(globpath(&runtimepath, "colors/onedark.vim"))
+	colorscheme onedark
+endif
 
 set nu
 set ruler
 set tabstop=4
 set softtabstop=4
 set shiftwidth=4
+set expandtab
 "let g:UltiSnipsExpandTrigger=","
 "let g:UltiSnipsJumpForwardTrigger="<tab>"
 "let g:UltiSnipsJumpBackwardTrigger="<s-tab>"
@@ -241,7 +244,7 @@ autocmd BufNewFile,BufRead *.md
 "YAML file config from
 "https://lornajane.net/posts/2018/vim-settings-for-working-with-yaml
 au BufNewFile,BufReadPost *.{yaml,yml} set filetype=yaml
-autocmd FileType yaml setlocal ts=2 sts=2 sw=2 expandtab
+autocmd FileType yaml setlocal ts=4 sts=4 sw=4 expandtab
 
 
 " Functions
@@ -298,8 +301,10 @@ function! Get_asyncrun_running()
 	return async_status
 endfunction
 
-call airline#parts#define_function('asyncrun_status', 'Get_asyncrun_running')
-let g:airline_section_x = airline#section#create(['asyncrun_status'])
+if exists('*airline#parts#define_function')
+	call airline#parts#define_function('asyncrun_status', 'Get_asyncrun_running')
+	let g:airline_section_x = airline#section#create(['asyncrun_status'])
+endif
 
 " Mouse mode, if available
 if has("mouse")
