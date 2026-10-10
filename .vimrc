@@ -9,7 +9,10 @@ if !isdirectory(vundle_exists)
 	echo "installing Vundle.vim"
 	echo ""
 	silent exec "!\git clone https://github.com/VundleVim/Vundle.vim.git " . vundle_exists
-	autocmd VimEnter * PluginInstall
+	" setup.sh runs PluginInstall itself and sets this so the clones do not run twice.
+	if !exists('g:dotfiles_skip_vundle_autocmd')
+		autocmd VimEnter * PluginInstall
+	endif
 endif
 
 

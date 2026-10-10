@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +42,12 @@ jobs:
             HOME="$online_home" ./setup.sh --yes --no-chsh --source "$GITHUB_WORKSPACE" "$@"
           }
 
+          # Later runs reuse the plugins from the first install.
+          run_setup_cached() {
+            HOME="$online_home" DOTFILES_SKIP_PACKAGES=1 ./setup.sh --yes --no-chsh --source "$GITHUB_WORKSPACE" "$@"
+          }
+
+          echo "::group::Install"
           run_setup
           [ -L "$online_home/.zshrc" ]
           [ -L "$online_home/.zshenv" ]
@@ -60,10 +67,14 @@ jobs:
           HOME="$online_home" vim --not-a-term --cmd 'set nomore' -N -u "$online_home/.vimrc" \
             -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
             -c 'qa!'
+          echo "::endgroup::"
 
-          run_setup
+          echo "::group::Second run"
+          run_setup_cached
+          echo "::endgroup::"
 
-          run_setup --pack
+          echo "::group::Pack and offline install"
+          run_setup_cached --pack
           archive="$GITHUB_WORKSPACE/build/dotfiles-offline.tar.gz"
           [ -f "$archive" ]
           [ -f "$archive.sha256" ]
@@ -93,8 +104,10 @@ jobs:
           HOME="$offline_home" vim --not-a-term --cmd 'set nomore' -N -u "$offline_home/.vimrc" \
             -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
             -c 'qa!'
+          echo "::endgroup::"
 
-          run_setup --zipapp
+          echo "::group::Zipapp"
+          run_setup_cached --zipapp
           [ -x "$GITHUB_WORKSPACE/build/dotfiles.pyz" ]
           [ -f "$GITHUB_WORKSPACE/build/dotfiles.pyz.sha256" ]
           zip_home="${RUNNER_TEMP}/zipapp-home"
@@ -110,3 +123,4 @@ jobs:
           HOME="$zip_home" vim --not-a-term --cmd 'set nomore' -N -u "$zip_home/.vimrc" \
             -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
             -c 'qa!'
+          echo "::endgroup::"

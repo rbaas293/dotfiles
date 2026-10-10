@@ -118,10 +118,13 @@ install_vim() {
   mkdir -p "$HOME/.vim/bundle"
   # nomore stops the "Press ENTER" prompt when a plugin is not installed yet.
   # --not-a-term keeps CI from waiting on a TTY. Older vim lacks that flag.
+  # The skip flag stops .vimrc from running PluginInstall again on VimEnter.
+  local -a vim_args
+  vim_args=(--cmd 'set nomore' --cmd 'let g:dotfiles_skip_vundle_autocmd=1' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!')
   if vim --help 2>&1 | grep -q -- '--not-a-term'; then
-    vim --not-a-term --cmd 'set nomore' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!' </dev/null
+    vim --not-a-term "${vim_args[@]}" </dev/null
   else
-    vim --cmd 'set nomore' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!' </dev/null
+    vim "${vim_args[@]}" </dev/null
   fi
   ok "Vim plugins installed"
 }
