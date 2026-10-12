@@ -1,0 +1,126 @@
+name: install
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  install:
+    name: install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          if [ "$(uname -s)" = Darwin ]; then
+            brew install shellcheck
+          else
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck setup.sh scripts/*.sh dotfilesInstallScripts/zshsetup.sh dotfilesInstallScripts/zsh_deps.sh
+
+      - name: Install, pack, and verify
+        run: |
+          set -euo pipefail
+
+          online_home="${RUNNER_TEMP}/dotfiles-home"
+          rm -rf "$online_home"
+          mkdir -p "$online_home"
+          printf 'previous zshrc\n' > "$online_home/.zshrc"
+
+          run_setup() {
+            HOME="$online_home" ./setup.sh --yes --no-chsh --source "$GITHUB_WORKSPACE" "$@"
+          }
+
+          # Later runs reuse the plugins from the first install.
+          run_setup_cached() {
+            HOME="$online_home" DOTFILES_SKIP_PACKAGES=1 ./setup.sh --yes --no-chsh --source "$GITHUB_WORKSPACE" "$@"
+          }
+
+          echo "::group::Install"
+          run_setup
+          [ -L "$online_home/.zshrc" ]
+          [ -L "$online_home/.zshenv" ]
+          [ -L "$online_home/.tmux.conf" ]
+          [ -L "$online_home/.vimrc" ]
+          [ "$(readlink "$online_home/.zshrc")" = "$GITHUB_WORKSPACE/.zshrc" ]
+          [ "$(readlink "$online_home/.zshenv")" = "$GITHUB_WORKSPACE/.zshenv" ]
+          [ "$(readlink "$online_home/.tmux.conf")" = "$GITHUB_WORKSPACE/.tmux.conf" ]
+          [ "$(readlink "$online_home/.vimrc")" = "$GITHUB_WORKSPACE/.vimrc" ]
+          [ ! -e "$online_home/.zprofile" ]
+          compgen -G "$online_home/.zshrc.backup.*" >/dev/null
+
+          HOME="$online_home" zsh -c 'source ~/.zshrc'
+          HOME="$online_home" tmux -f "$online_home/.tmux.conf" -L ci start-server
+          HOME="$online_home" tmux -f "$online_home/.tmux.conf" -L ci new-session -d -s probe
+          HOME="$online_home" tmux -L ci kill-server || true
+          HOME="$online_home" vim --not-a-term --cmd 'set nomore' -N -u "$online_home/.vimrc" \
+            -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
+            -c 'qa!'
+          echo "::endgroup::"
+
+          echo "::group::Second run"
+          run_setup_cached
+          echo "::endgroup::"
+
+          echo "::group::Pack and offline install"
+          run_setup_cached --pack
+          archive="$GITHUB_WORKSPACE/build/dotfiles-offline.tar.gz"
+          [ -f "$archive" ]
+          [ -f "$archive.sha256" ]
+
+          extract="${RUNNER_TEMP}/offline-extract"
+          rm -rf "$extract"
+          mkdir -p "$extract"
+          tar -C "$extract" -xzf "$archive"
+
+          stub="${RUNNER_TEMP}/netstub"
+          mkdir -p "$stub"
+          printf '#!/bin/sh\necho "network disabled: curl $*" >&2\nexit 1\n' > "$stub/curl"
+          printf '#!/bin/sh\necho "network disabled: git $*" >&2\nexit 1\n' > "$stub/git"
+          chmod 755 "$stub/curl" "$stub/git"
+
+          offline_home="${RUNNER_TEMP}/offline-home"
+          rm -rf "$offline_home"
+          mkdir -p "$offline_home"
+          PATH="$stub:$PATH" HOME="$offline_home" \
+            "$extract/dotfiles-offline/setup.sh" --offline --no-chsh --yes \
+            --source "$extract/dotfiles-offline"
+          [ ! -e "$offline_home/.zprofile" ]
+          HOME="$offline_home" zsh -c 'source ~/.zshrc'
+          HOME="$offline_home" tmux -f "$offline_home/.tmux.conf" -L ci-offline start-server
+          HOME="$offline_home" tmux -f "$offline_home/.tmux.conf" -L ci-offline new-session -d -s probe
+          HOME="$offline_home" tmux -L ci-offline kill-server || true
+          HOME="$offline_home" vim --not-a-term --cmd 'set nomore' -N -u "$offline_home/.vimrc" \
+            -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
+            -c 'qa!'
+          echo "::endgroup::"
+
+          echo "::group::Zipapp"
+          run_setup_cached --zipapp
+          [ -x "$GITHUB_WORKSPACE/build/dotfiles.pyz" ]
+          [ -f "$GITHUB_WORKSPACE/build/dotfiles.pyz.sha256" ]
+          zip_home="${RUNNER_TEMP}/zipapp-home"
+          rm -rf "$zip_home"
+          mkdir -p "$zip_home"
+          PATH="$stub:$PATH" HOME="$zip_home" \
+            "$GITHUB_WORKSPACE/build/dotfiles.pyz" --no-chsh --yes
+          [ ! -e "$zip_home/.zprofile" ]
+          HOME="$zip_home" zsh -c 'source ~/.zshrc'
+          HOME="$zip_home" tmux -f "$zip_home/.tmux.conf" -L ci-zip start-server
+          HOME="$zip_home" tmux -f "$zip_home/.tmux.conf" -L ci-zip new-session -d -s probe
+          HOME="$zip_home" tmux -L ci-zip kill-server || true
+          HOME="$zip_home" vim --not-a-term --cmd 'set nomore' -N -u "$zip_home/.vimrc" \
+            -c 'if &expandtab != 1 || &shiftwidth != 4 || &tabstop != 4 || &softtabstop != 4 | cquit | endif' \
+            -c 'qa!'
+          echo "::endgroup::"

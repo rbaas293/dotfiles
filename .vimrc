@@ -7,9 +7,15 @@ if !isdirectory(vundle_exists)
 		execute "q!"
 	endif
 	echo "installing Vundle.vim"
-	echo ""
-	silent exec "!\git clone https://github.com/VundleVim/Vundle.vim.git " . vundle_exists
-	autocmd VimEnter * PluginInstall
+	" system() reads the clone output. :silent !git clone can deadlock on that pipe.
+	let l:clone = system('GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/VundleVim/Vundle.vim.git ' . shellescape(vundle_exists))
+	if v:shell_error
+		echoerr l:clone
+		execute "q!"
+	endif
+	if !exists('g:dotfiles_skip_vundle_autocmd') && has('ttyin')
+		autocmd VimEnter * PluginInstall
+	endif
 endif
 
 
@@ -98,13 +104,16 @@ set tags=tags; " Find tags recursively
 " Make completion menu behave like an IDE
 set completeopt=longest,menuone,preview
 
-colorscheme onedark
+if !empty(globpath(&runtimepath, "colors/onedark.vim"))
+	colorscheme onedark
+endif
 
 set nu
 set ruler
 set tabstop=4
 set softtabstop=4
 set shiftwidth=4
+set expandtab
 "let g:UltiSnipsExpandTrigger=","
 "let g:UltiSnipsJumpForwardTrigger="<tab>"
 "let g:UltiSnipsJumpBackwardTrigger="<s-tab>"
@@ -241,7 +250,7 @@ autocmd BufNewFile,BufRead *.md
 "YAML file config from
 "https://lornajane.net/posts/2018/vim-settings-for-working-with-yaml
 au BufNewFile,BufReadPost *.{yaml,yml} set filetype=yaml
-autocmd FileType yaml setlocal ts=2 sts=2 sw=2 expandtab
+autocmd FileType yaml setlocal ts=4 sts=4 sw=4 expandtab
 
 
 " Functions
@@ -298,8 +307,10 @@ function! Get_asyncrun_running()
 	return async_status
 endfunction
 
-call airline#parts#define_function('asyncrun_status', 'Get_asyncrun_running')
-let g:airline_section_x = airline#section#create(['asyncrun_status'])
+if exists('*airline#parts#define_function')
+	call airline#parts#define_function('asyncrun_status', 'Get_asyncrun_running')
+	let g:airline_section_x = airline#section#create(['asyncrun_status'])
+endif
 
 " Mouse mode, if available
 if has("mouse")

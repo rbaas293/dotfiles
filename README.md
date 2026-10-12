@@ -2,68 +2,73 @@
 
 An amazing vim config, a mediocre zsh config, and (for those with no fear) emojis in your terminal.
 
-Also my script for quickly updating/installing my dotfiles on many machines.
+`setup.sh` installs zsh, tmux, and vim on macOS (Homebrew) and Debian/Ubuntu (`apt-get`). It symlinks `.zshrc`, `.zshenv`, `.tmux.conf`, and `.vimrc`. It does not install `.zprofile`, i3, or X11.
 
-# Dependencies
-## Ubuntu
+## Online install
+
 ```bash
-sudo apt update
-sudo apt install git vim fonts-powerline exuberant-ctags zsh gdb curl openssh-server -y
+git clone git@github.com:rbaas293/dotfiles.git ~/.dotfiles
+cd ~/.dotfiles
+./setup.sh --yes
 ```
 
-## Usage:
+`--source DIR` uses that checkout and skips the SSH clone. `--no-chsh` leaves the login shell alone. `--dry-run` prints the actions.
 
-* Combined Using `setup.sh`
-
-    `git clone` this repository, then:
-
-    ```bash
-    git clone --recurse-submodules -j8 https://github.com/rbaas293/dotfiles.git
-    cd dotfiles
-    ./setup.sh [--offline] [--verbose]
-    ```
-
-    An optional _offline mode_ is included which provides the functionality to run the script on an
-    _online_ computer then transfer it to an _offline_ computer. This method assumes
-    there is an **apt/pacman mirror** on the _offline_ network.
-
-    Simply pass the `--offline` switch to
-    `setup.py` while _online_ to download the required repositories, then transfer this repo to the
-    _offline_ machine and run again.
-
-* `zsh`
-
-    ```bash
-    sudo ./dotfilesInstallScripts/zsh_deps.sh
-    ./dotfilesInstallScripts/zshsetup.sh
-    python3 update_dotfiles.py --install -f .zshrc
-    sudo chsh -s /usr/bin/zsh
-    ```
-
-* `vim`
-
-    ```bash
-    sudo ./dotfilesInstallScripts/vim_deps.sh
-    ./update_dotfiles.py --install -f .vimrc
-    vim
-    ```
-
-### `update_dotfiles.py`
+TmuxAI is optional and stays out of the offline archive:
 
 ```bash
-usage: update_dotfiles.py [-h] [--list-files] [--list-repos] [--install]
-                          [-f FILES [FILES ...]] [--commit COMMIT] [--verbose]
+TMUXAI_API_TOKEN=your-token ./setup.sh --with-tmuxai
+./setup.sh --with-tmuxai --token-file ~/.config/tmuxai-token
+```
 
-This is a quick script to update dotfiles quickly. Settings are located in
-~/.config/my-dotfiles-settings
+The token is read from the environment or from a file. It is not accepted as a command argument.
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --list-files          Lists files that will be updated
-  --list-repos          List the repo locations that will be updated
-  --install             Install files to current user's config
-  -f FILES [FILES ...], --files FILES [FILES ...]
-                        Specific files that you would like to update
-  --commit COMMIT       Commit message for git repo
-  --verbose             verbose mode
+## Air-gapped install
+
+On a machine with network:
+
+```bash
+./setup.sh --yes --pack --zipapp
+```
+
+That writes:
+
+- `build/dotfiles-offline.tar.gz` and `build/dotfiles-offline.tar.gz.sha256`
+- `build/dotfiles.pyz` and `build/dotfiles.pyz.sha256`, one executable file
+
+The archive holds the installer, the four config files, Oh My Zsh, the zsh plugins, and the Vim bundles. It does not contain `.git`, `.zprofile`, or a TmuxAI token. `zsh`, `tmux`, and `vim` must already be on the air-gapped machine (from an internal mirror). The archive does not download them.
+
+Check the tar, then install:
+
+```bash
+sha256sum -c dotfiles-offline.tar.gz.sha256   # Linux
+shasum -a 256 -c dotfiles-offline.tar.gz.sha256   # macOS
+tar -xzf dotfiles-offline.tar.gz
+cd dotfiles-offline
+./setup.sh --offline --no-chsh
+```
+
+Or copy the zipapp and run it. The target also needs `python3`. This is a Python zipapp, not a native binary.
+
+```bash
+sha256sum -c dotfiles.pyz.sha256          # Linux
+shasum -a 256 -c dotfiles.pyz.sha256      # macOS
+chmod +x dotfiles.pyz
+./dotfiles.pyz --no-chsh
+```
+
+`./dotfiles.pyz` extracts the payload, runs `setup.sh --offline`, and removes the extract. Symlinks point at `~/.local/share/dotfiles`, so they stay valid after that.
+
+`--offline` does not call `curl`, `git`, `brew`, or `apt`.
+
+## Vim
+
+Indentation is spaces, width 4 (`expandtab`, `tabstop`, `softtabstop`, `shiftwidth`). Makefiles stay real tabs. The installer clones the Vim plugins with git and does not leave an interactive vim session open.
+
+## Sync files back
+
+`update_dotfiles.py --install` copies files into the home directory. `-f` matches exact relative paths, and an existing destination is moved aside first.
+
+```bash
+python3 update_dotfiles.py --install -f .zshrc
 ```
