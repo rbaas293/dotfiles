@@ -63,7 +63,7 @@ chmod +x dotfiles.pyz
 
 ## Vim
 
-Indentation is spaces, width 4 (`expandtab`, `tabstop`, `softtabstop`, `shiftwidth`). Makefiles stay real tabs. The installer runs Vundle's `PluginInstall` and does not leave an interactive vim session open.
+Indentation is spaces, width 4 (`expandtab`, `tabstop`, `softtabstop`, `shiftwidth`). Makefiles stay real tabs. The installer clones the Vim plugins with git and does not leave an interactive vim session open.
 
 ## Sync files back
 

@@ -101,8 +101,35 @@ resolve_source() {
   [ -f "$DOTFILES_SOURCE/.vimrc" ] || die "$DOTFILES_SOURCE has no .vimrc"
 }
 
+# Clone the Plugin entries in vimrc. Vim's :silent !git clone fills its output
+# pipe and then waits forever, which is what stuck the CI jobs. A missing or
+# private repo is skipped instead of asking for credentials.
+clone_vim_plugins() {
+  local vimrc=$1 bundle="$HOME/.vim/bundle" spec name url
+  mkdir -p "$bundle"
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    name=${spec##*/}
+    name=${name%.git}
+    url="https://github.com/${spec}.git"
+    if [ -d "$bundle/$name" ]; then
+      ok "Vim plugin $spec already present"
+      continue
+    fi
+    info "Cloning Vim plugin $spec"
+    if ! GIT_TERMINAL_PROMPT=0 git clone --depth=1 "$url" "$bundle/$name"; then
+      rm -rf "${bundle:?}/${name:?}"
+      warn "Could not clone $spec"
+    fi
+  done <<EOF
+$(awk -F "'" '/^[[:space:]]*Plugin / { print $2 }' "$vimrc")
+EOF
+}
+
 install_vim() {
-  link_file "$(config_link_source .vimrc)" "$HOME/.vimrc"
+  local vimrc
+  vimrc=$(config_link_source .vimrc)
+  link_file "$vimrc" "$HOME/.vimrc"
   if [ "$DOTFILES_OFFLINE" -eq 1 ]; then
     [ -d "$DOTFILES_SOURCE/cache/vim-bundle" ] || die "cache/vim-bundle is missing. Re-run ./setup.sh --pack on an online machine."
     info "Installing Vim plugins from the offline cache"
@@ -111,21 +138,11 @@ install_vim() {
     return 0
   fi
   if [ "$DOTFILES_DRY_RUN" -eq 1 ] || [ "$DOTFILES_SKIP_PACKAGES" -eq 1 ]; then
-    info "Skipping Vim PluginInstall"
+    info "Skipping Vim plugin clones"
     return 0
   fi
   info "Installing Vim plugins"
-  mkdir -p "$HOME/.vim/bundle"
-  # nomore stops the "Press ENTER" prompt when a plugin is not installed yet.
-  # --not-a-term keeps CI from waiting on a TTY. Older vim lacks that flag.
-  # The skip flag stops .vimrc from running PluginInstall again on VimEnter.
-  local -a vim_args
-  vim_args=(--cmd 'set nomore' --cmd 'let g:dotfiles_skip_vundle_autocmd=1' -N -u "$HOME/.vimrc" -c 'PluginInstall' -c 'qa!')
-  if vim --help 2>&1 | grep -q -- '--not-a-term'; then
-    vim --not-a-term "${vim_args[@]}" </dev/null
-  else
-    vim "${vim_args[@]}" </dev/null
-  fi
+  clone_vim_plugins "$vimrc"
   ok "Vim plugins installed"
 }
 

@@ -7,10 +7,13 @@ if !isdirectory(vundle_exists)
 		execute "q!"
 	endif
 	echo "installing Vundle.vim"
-	echo ""
-	silent exec "!\git clone https://github.com/VundleVim/Vundle.vim.git " . vundle_exists
-	" setup.sh runs PluginInstall itself and sets this so the clones do not run twice.
-	if !exists('g:dotfiles_skip_vundle_autocmd')
+	" system() reads the clone output. :silent !git clone can deadlock on that pipe.
+	let l:clone = system('GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/VundleVim/Vundle.vim.git ' . shellescape(vundle_exists))
+	if v:shell_error
+		echoerr l:clone
+		execute "q!"
+	endif
+	if !exists('g:dotfiles_skip_vundle_autocmd') && has('ttyin')
 		autocmd VimEnter * PluginInstall
 	endif
 endif
